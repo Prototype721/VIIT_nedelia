@@ -232,3 +232,38 @@ def extract_fields_from_lines(grouped_lines, tokenizer):
         fields[current_question] = current_answer
 
     return fields
+
+
+
+def extract_questions_with_boxes(grouped_lines, tokenizer):
+    questions = []
+
+    for line in grouped_lines:
+        tokens = []
+        labels = []
+        boxes = []
+
+        for (input_ids, label_id), box in line:
+            label = id2label[label_id]
+            if label.endswith("QUESTION"):
+                tokens.append(input_ids)
+                labels.append(label_id)
+                boxes.append(box)
+
+        if not tokens:
+            continue
+
+        text = tokenizer.decode([tid for ids in tokens for tid in ids], skip_special_tokens=True).strip()
+        if not text:
+            continue
+
+        # Merge all boxes into one that contains the full line
+        x0 = min(box[0] for box in boxes)
+        y0 = min(box[1] for box in boxes)
+        x1 = max(box[2] for box in boxes)
+        y1 = max(box[3] for box in boxes)
+        full_box = [x0, y0, x1, y1]
+
+        questions.append((text, full_box))
+
+    return questions

@@ -3,80 +3,50 @@ import pytesseract
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-# Path to tesseract executable
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# def run_ocr(image_path):
-#     image = Image.open(image_path).convert("RGB")
-#     ocr_data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+from paddleocr import PaddleOCR
+from PIL import Image
 
-#     words = []
-#     boxes = []
-
-#     for i in range(len(ocr_data["text"])):
-#         word = ocr_data["text"][i]
-#         #if word.strip() == "":       # TODO 
-#            # continue
-#         words.append(word)
-#         x, y, w, h = ocr_data["left"][i], ocr_data["top"][i], ocr_data["width"][i], ocr_data["height"][i]
-        
-#         box = [int(1000 * x / image.width),   # TODO
-#                int(1000 * y / image.height),
-#                int(1000 * (x + w) / image.width),
-#                int(1000 * (y + h) / image.height)]
-#         boxes.append(box)
-
-#     return image, words, boxes
-
-
+# Load PaddleOCR once (do this at the top level)
+ocr_model = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
 
 def run_ocr_lines(image_path):
-    from PIL import Image
-    import pytesseract
-
     image = Image.open(image_path).convert("RGB")
-    ocr_data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    result = ocr_model.ocr(str(image_path), cls=True)
 
     lines = []
-    current_line = []
-    last_line_num = -1
-    line_boxes = []
-
-    for i in range(len(ocr_data["text"])):
-        word = ocr_data["text"][i].strip()
-        if not word:
+    for line in result[0]:
+        box, (text, confidence) = line
+        if not text.strip():
             continue
 
-        line_num = ocr_data["line_num"][i]
-        x, y, w, h = ocr_data["left"][i], ocr_data["top"][i], ocr_data["width"][i], ocr_data["height"][i]
-        box = [int(1000 * x / image.width),
-               int(1000 * y / image.height),
-               int(1000 * (x + w) / image.width),
-               int(1000 * (y + h) / image.height)]
+        # Convert box format to [x0, y0, x1, y1]
+        x_coords = [pt[0] for pt in box]
+        y_coords = [pt[1] for pt in box]
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
 
-        if line_num != last_line_num and current_line:
-            lines.append((current_line, line_boxes))
-            current_line = []
-            line_boxes = []
+        lines.append({
+            "text": text,
+            "box": [
+                int(1000 * x_min / image.width),
+                int(1000 * y_min / image.height),
+                int(1000 * x_max / image.width),
+                int(1000 * y_max / image.height),
+            ],
+        })
 
-        current_line.append(word)
-        line_boxes.append(box)
-        last_line_num = line_num
-
-    if current_line:
-        lines.append((current_line, line_boxes))
-
-    for line_words, _ in lines:
-        print("Line:", " ".join(line_words))
-
-        
     return image, lines
 
 
-
 def prepare_lines_for_model(image, lines):
-    words = [' '.join(line_words) for line_words, _ in lines]
-    boxes = [merge_boxes(line_boxes) for _, line_boxes in lines]
+    words = []
+    boxes = []
+
+    for line in lines:
+        words.append(line["text"])
+        boxes.append(line["box"])
+
     return words, boxes
 
 def merge_boxes(boxes):
